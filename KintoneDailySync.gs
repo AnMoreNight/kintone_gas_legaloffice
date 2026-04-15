@@ -508,6 +508,10 @@ function classifyAmountMismatchForRow(row, todayYmd) {
   if (expected === actual) {
     return null;
   }
+  /** 上振れ入金（実額 > 予定額）は通知しない */
+  if (actual > expected) {
+    return null;
+  }
 
   var due = row["入金予定日"] && String(row["入金予定日"]).trim();
   if (due && todayYmd) {
