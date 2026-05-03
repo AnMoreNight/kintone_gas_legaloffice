@@ -377,6 +377,7 @@ function isUnpaidForOverdue(actualDateStr, actualAmountStr) {
 /** 3日前・前日リマインド共通（【〇】→ timingLabel） */
 function buildMessageAdvanceNotice_(timingLabel) {
   return (
+    "【システム自動送信】\n" +
     "お世話になっております。\n" +
     "\n" +
     "ご入金期限【" +
@@ -410,6 +411,7 @@ var LINE_MSG_OVERDUE_FOOTER =
 /** 入金予定日翌日・未入金 */
 function buildMessageOverdueUnpaid_() {
   return (
+    "【システム自動送信】\n" +
     "※重要事項の連絡※\n" +
     "期日でのご入金確認が取れなかったためご連絡いたします。\n" +
     "お振込み状況をご確認いただき、改めてご入金いただくか、遅延している旨のご連絡をいただけないでしょうか。\n" +
@@ -431,6 +433,7 @@ function formatYenAmountDisplay_(n) {
 function buildMessageOverdueShortage_(shortageYen) {
   var disp = formatYenAmountDisplay_(shortageYen);
   return (
+    "【システム自動送信】\n" +
     "※重要事項の連絡※\n" +
     "期日でのご入金について金額が " +
     disp +
@@ -462,6 +465,7 @@ function parseAmountYen_(raw) {
 /**
  * 入金予定額を満たす入金が記録済みなら、支払催促系（3日前・前日・翌日未入金/不足）を送らない。
  * 実入金日・実入金額があり、かつ実入金額 ≥ 入金予定額（両方数値化できる場合）で満たしたとみなす。
+ * ※ 入金予定額が 0 円のケースでは 実入金額 0 円でも満額とみなす（actual <= 0 は除外）。
  */
 function isFullyPaidForRow_(row) {
   var d = row["実入金日"] != null ? String(row["実入金日"]).trim() : "";
@@ -470,7 +474,7 @@ function isFullyPaidForRow_(row) {
     return false;
   }
   var actual = parseAmountYen_(row["実入金額"]);
-  if (actual === null || actual <= 0) {
+  if (actual === null) {
     return false;
   }
   var exp = parseAmountYen_(row["入金予定額"]);
@@ -482,6 +486,7 @@ function isFullyPaidForRow_(row) {
 
 function buildMessageAmountMismatch(予定額Display, 実額Display) {
   return (
+    "【システム自動送信】\n" +
     "お世話になっております。\n" +
     "ご入金の確認のところ、お支払い予定額は " +
     予定額Display +
@@ -557,6 +562,11 @@ function classifyReminderForRowJst(todayYmd, row) {
     return null;
   }
 
+  // check フラグがない行（_allowAdvanceNotice: false）は翌日未入金・不足も含め一切送らない
+  if (row._allowAdvanceNotice === false) {
+    return null;
+  }
+
   var delta = calendarDaysFromTodayToDue(todayYmd, due);
   if (isNaN(delta)) {
     return null;
@@ -586,24 +596,21 @@ function classifyReminderForRowJst(todayYmd, row) {
     if (isFullyPaidForRow_(row)) {
       return null;
     }
-    if (
-      !isUnpaidForOverdue(実日, 実額) &&
-      expNum !== null &&
-      actNum !== null &&
-      actNum < expNum
-    ) {
-      return {
-        kind: "one_day_after_shortage",
-        message: buildMessageOverdueShortage_(expNum - actNum),
-      };
+    if (実日) {
+      // 実入金日が設定済み（遅延・前払い等）→ 未入金通知は送らず、金額不足のみ確認する
+      if (expNum !== null && actNum !== null && actNum < expNum) {
+        return {
+          kind: "one_day_after_shortage",
+          message: buildMessageOverdueShortage_(expNum - actNum),
+        };
+      }
+      return null;
     }
-    if (isUnpaidForOverdue(実日, 実額)) {
-      return {
-        kind: "one_day_after_overdue",
-        message: buildMessageOverdueUnpaid_(),
-      };
-    }
-    return null;
+    // 実入金日が未設定 → 完全未入金として通知
+    return {
+      kind: "one_day_after_overdue",
+      message: buildMessageOverdueUnpaid_(),
+    };
   }
 
   return null;
